@@ -1,4 +1,3 @@
 websocket-client
-requests
-gspread
-oauth2client
+python-telegram-bot
+flask
