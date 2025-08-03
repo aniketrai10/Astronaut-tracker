@@ -6,8 +6,8 @@ import threading
 from datetime import datetime
 
 # ==== Telegram Setup ====
-TELEGRAM_BOT_TOKEN = "yaha_apna_token"
-CHAT_ID = "yaha_apna_chatid"
+TELEGRAM_BOT_TOKEN = "8250743662:AAEe1t7RNJjBPhQT5kJH3BBdjbeUg9dm2wk"
+CHAT_ID = "7380981045"
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
 # ==== Flask App for data.txt ====
@@ -52,7 +52,7 @@ def on_open(ws):
 # ==== Start WebSocket ====
 def start_ws():
     ws = websocket.WebSocketApp(
-        "wss://<exact_websocket_url>",  # <-- yaha tumhara actual websocket URL dalega
+        "wss://game-v2-astronaut.1wayez.life/socket.io/?EIO=3&transport=websocket",
         on_message=on_message,
         on_error=on_error,
         on_close=on_close
