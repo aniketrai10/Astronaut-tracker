@@ -13,7 +13,9 @@ bot = telegram.Bot(token=BOT_TOKEN)
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
 client = gspread.authorize(creds)
-sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/15BMpzvFlYCjURPboHI19qCX4ypEXZ9qwBCsAmeE_Ne4/edit?usp=drivesdk").sheet1
+sheet = client.open_by_url(
+    "https://docs.google.com/spreadsheets/d/15BMpzvFlYCjURPboHI19qCX4ypEXZ9qwBCsAmeE_Ne4/edit?usp=drivesdk"
+).sheet1
 
 # Socket.IO setup
 sio = socketio.Client()
@@ -22,15 +24,18 @@ sio = socketio.Client()
 def connect():
     bot.send_message(chat_id=CHAT_ID, text="✅ Tracker Connected to Astronaut server.")
 
-@sio.on('crash')  # <-- HAR से actual event name confirm करना होगा
+# Astronaut crash result listener
+@sio.on('crash_point')   # <- Ye event HAR file se nikala hai
 def on_crash(data):
-    crash_point = data.get('crashPoint')
-    if crash_point:
+    try:
+        crash_point = float(data.get('crashPoint', 0))
         sheet.append_row([time.strftime('%Y-%m-%d %H:%M:%S'), crash_point])
         if crash_point < 2.0:
             bot.send_message(chat_id=CHAT_ID, text=f"⚠️ Low Crash Alert: {crash_point}x")
         if crash_point < 1.5:
             bot.send_message(chat_id=CHAT_ID, text=f"🚨 Very Low Crash: {crash_point}x")
+    except Exception as e:
+        print("Error parsing crash data:", e)
 
 @sio.event
 def disconnect():
@@ -38,7 +43,7 @@ def disconnect():
     time.sleep(5)
     sio.connect(URL)
 
-# Connect to the WebSocket
-URL = "wss://<subdomain>.1wayez.life/socket.io/?EIO=4&transport=websocket"
+# WebSocket URL (HAR se nikala hua)
+URL = "wss://astronaut.1wayez.life/socket.io/?EIO=4&transport=websocket"
 sio.connect(URL)
 sio.wait()
