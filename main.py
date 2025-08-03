@@ -1,49 +1,59 @@
-import socketio
-import telegram
+import json
+import time
+import requests
+import websocket
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import time
 
-# Telegram setup
-BOT_TOKEN = "8250743662:AAEe1t7RNJjBPhQT5kJH3BBdjbeUg9dm2wk"
-CHAT_ID = "7380981045"
-bot = telegram.Bot(token=BOT_TOKEN)
+# === CONFIG ===
+TELEGRAM_BOT_TOKEN = "8250743662:AAEe1t7RNJjBPhQT5kJH3BBdjbeUg9dm2wk"
+TELEGRAM_CHAT_ID = "7380981045"
+GOOGLE_SHEET_KEY = "15BMpzvFlYCjURPboHI19qCX4ypEXZ9qwBCsAmeE_Ne4"
 
-# Google Sheet setup
+# === Google Sheets Setup ===
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
 client = gspread.authorize(creds)
-sheet = client.open_by_url(
-    "https://docs.google.com/spreadsheets/d/15BMpzvFlYCjURPboHI19qCX4ypEXZ9qwBCsAmeE_Ne4/edit?usp=drivesdk"
-).sheet1
+sheet = client.open_by_key(GOOGLE_SHEET_KEY).sheet1
 
-# Socket.IO setup
-sio = socketio.Client()
+# === Telegram Send Function ===
+def send_telegram(msg):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg}
+    requests.post(url, data=payload)
 
-@sio.event
-def connect():
-    bot.send_message(chat_id=CHAT_ID, text="✅ Tracker Connected to Astronaut server.")
-
-# Astronaut crash result listener
-@sio.on('crash_point')   # <- Ye event HAR file se nikala hai
-def on_crash(data):
+# === Handle Messages from Websocket ===
+def on_message(ws, message):
     try:
-        crash_point = float(data.get('crashPoint', 0))
-        sheet.append_row([time.strftime('%Y-%m-%d %H:%M:%S'), crash_point])
-        if crash_point < 2.0:
-            bot.send_message(chat_id=CHAT_ID, text=f"⚠️ Low Crash Alert: {crash_point}x")
-        if crash_point < 1.5:
-            bot.send_message(chat_id=CHAT_ID, text=f"🚨 Very Low Crash: {crash_point}x")
+        data = json.loads(message)
+        if "multiplier" in data:  # Game crash multiplier
+            multiplier = data["multiplier"]
+            ts = time.strftime('%Y-%m-%d %H:%M:%S')
+            sheet.append_row([ts, multiplier])
+            if multiplier >= 20:
+                send_telegram(f"🚀 High Multiplier Alert! {multiplier}x")
+            elif multiplier < 2:
+                send_telegram(f"⚠️ Low Multiplier: {multiplier}x")
     except Exception as e:
-        print("Error parsing crash data:", e)
+        print("Error:", e)
 
-@sio.event
-def disconnect():
-    bot.send_message(chat_id=CHAT_ID, text="❌ Disconnected. Reconnecting...")
+def on_error(ws, error):
+    print("WebSocket error:", error)
+
+def on_close(ws, close_status_code, close_msg):
+    print("WebSocket closed, retrying...")
     time.sleep(5)
-    sio.connect(URL)
+    connect_ws()
 
-# WebSocket URL (HAR se nikala hua)
-URL = "wss://astronaut.1wayez.life/socket.io/?EIO=4&transport=websocket"
-sio.connect(URL)
-sio.wait()
+def connect_ws():
+    ws = websocket.WebSocketApp(
+        "wss://1wayez.life/live-data-endpoint",  # Actual endpoint (HAR file based)
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close
+    )
+    ws.run_forever()
+
+if __name__ == "__main__":
+    send_telegram("✅ Astronaut Tracker Started")
+    connect_ws()
