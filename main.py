@@ -1,81 +1,62 @@
 import websocket
 import json
-from telegram import Bot
-from flask import Flask, send_file
-import threading
+import time
 from datetime import datetime
+import telegram
 
-# ==== Telegram Setup ====
-TELEGRAM_BOT_TOKEN = "8250743662:AAEe1t7RNJjBPhQT5kJH3BBdjbeUg9dm2wk"
-CHAT_ID = "7380981045"
-bot = Bot(token=TELEGRAM_BOT_TOKEN)
+# ==== CONFIG ====
+BOT_TOKEN = "8250743662:AAEe1t7RNJjBPhQT5kJH3BBdjbeUg9dm2wk"  # Tumhara saved bot token
+CHAT_ID = "7380981045"  # Tumhara saved chat ID
+WS_URL = "wss://1wayez.life/socket.io/?EIO=3&transport=websocket"  # Real Astronaut WebSocket
+DATA_FILE = "data.txt"
+ALERT_MULTIPLIERS = [5, 10, 15, 20]  # Alerts ke liye
 
-# ==== Flask App for data.txt ====
-app = Flask(__name__)
+# Telegram bot setup
+bot = telegram.Bot(token=BOT_TOKEN)
 
-@app.route("/data.txt")
-def get_data():
-    return send_file("data.txt")
+def log_data(crash_point):
+    """Save crash points to file with timestamp"""
+    with open(DATA_FILE, "a") as f:
+        f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Crash: {crash_point}x\n")
 
-def run_flask():
-    app.run(host="0.0.0.0", port=10000)
+def send_alert(crash_point):
+    """Send Telegram alerts on certain multipliers"""
+    for m in ALERT_MULTIPLIERS:
+        if crash_point >= m:
+            bot.send_message(chat_id=CHAT_ID, text=f"🚀 Astronaut Crash Alert: {crash_point}x!")
 
-# ==== Tracking for streaks ====
-below_2x_streak = 0
-
-# ==== WebSocket Callbacks ====
 def on_message(ws, message):
-    global below_2x_streak
     try:
-        data = json.loads(message)
-        if "multiplier" in data:
-            multiplier = data["multiplier"]
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            # Write to data.txt
-            with open("data.txt", "a") as f:
-                f.write(f"[{timestamp}] Multiplier: {multiplier}x\n")
-
-            # Telegram Alerts
-            if multiplier >= 20:
-                bot.send_message(chat_id=CHAT_ID, text=f"🚀 20x+ Alert: {multiplier}x at {timestamp}")
-            elif multiplier >= 10:
-                bot.send_message(chat_id=CHAT_ID, text=f"🔥 10x+ Alert: {multiplier}x at {timestamp}")
-            elif multiplier >= 5:
-                bot.send_message(chat_id=CHAT_ID, text=f"✨ 5x+ Alert: {multiplier}x at {timestamp}")
-
-            # Streaks tracking
-            if multiplier < 2:
-                below_2x_streak += 1
-                if below_2x_streak in [10, 15, 20]:
-                    bot.send_message(chat_id=CHAT_ID, text=f"⚠️ Streak Alert: {below_2x_streak} consecutive <2x multipliers at {timestamp}")
-            else:
-                below_2x_streak = 0
-
-            print(f"[{timestamp}] Multiplier: {multiplier}x")
+        if message.startswith("42"):  # Socket.io message format
+            payload = json.loads(message[2:])
+            if isinstance(payload, list) and len(payload) > 1:
+                data = payload[1]
+                if "crashPoint" in data:
+                    crash_point = float(data["crashPoint"])
+                    log_data(crash_point)
+                    send_alert(crash_point)
+                    print(f"Crash: {crash_point}x")
     except Exception as e:
-        print(f"Error: {e}")
+        print("Error parsing:", e)
 
 def on_error(ws, error):
-    print("Error:", error)
+    print("WebSocket Error:", error)
 
 def on_close(ws, close_status_code, close_msg):
-    print("WebSocket closed")
+    print("WebSocket Closed. Reconnecting in 5s...")
+    time.sleep(5)
+    connect()
 
 def on_open(ws):
-    print("WebSocket connection opened")
+    print("WebSocket Connected!")
 
-# ==== Start WebSocket ====
-def start_ws():
-    ws = websocket.WebSocketApp(
-        "wss://game-v2-astronaut.1wayez.life/socket.io/?EIO=3&transport=websocket",
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close
-    )
+def connect():
+    ws = websocket.WebSocketApp(WS_URL,
+                                on_message=on_message,
+                                on_error=on_error,
+                                on_close=on_close)
     ws.on_open = on_open
     ws.run_forever()
 
 if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
-    start_ws()
+    connect()
