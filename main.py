@@ -1,52 +1,48 @@
-import time
-import requests
+import asyncio
+import websockets
 import json
+import time
+import telegram
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from telegram import Bot
 
-# --- CONFIG ---
-TELEGRAM_TOKEN = "8250743662:AAEe1t7RNJjBPhQT5kJH3BBdjbeUg9dm2wk"
+# Telegram setup
+BOT_TOKEN = "8250743662:AAEe1t7RNJjBPhQT5kJH3BBdjbeUg9dm2wk"
 CHAT_ID = "7380981045"
-GOOGLE_SHEET_NAME = "Astronaut Tracker"
-# ---------------
+bot = telegram.Bot(token=BOT_TOKEN)
 
-# Telegram bot
-bot = Bot(token=TELEGRAM_TOKEN)
-
-# Google Sheet auth
+# Google Sheet setup
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
 client = gspread.authorize(creds)
-sheet = client.open(GOOGLE_SHEET_NAME).sheet1
+sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/15BMpzvFlYCjURPboHI19qCX4ypEXZ9qwBCsAmeE_Ne4/edit?usp=drivesdk").sheet1
 
-# Dummy data fetcher (replace with live game API/websocket)
-def fetch_game_data():
-    return {"multiplier": 1.2, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}
+async def connect():
+    url = "wss://1wayez.life/live/game-data"  # <-- HAR से निकला सही socket URL डालना पड़ेगा
+    while True:
+        try:
+            async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
+                await bot.send_message(chat_id=CHAT_ID, text="✅ Tracker Connected to Server.")
+                while True:
+                    msg = await ws.recv()
+                    data = json.loads(msg)
 
-# Streak tracking
-streak_2x = 0
+                    # Extract crash point (modify if actual key name differs)
+                    crash_point = data.get("crashPoint", None)
+                    if crash_point:
+                        sheet.append_row([time.strftime('%Y-%m-%d %H:%M:%S'), crash_point])
+                        
+                        # Alerts
+                        if crash_point < 2.0:
+                            await bot.send_message(chat_id=CHAT_ID, text=f"⚠️ Low Crash Alert: {crash_point}x")
+                        if crash_point < 1.5:
+                            await bot.send_message(chat_id=CHAT_ID, text=f"🚨 Very Low Crash: {crash_point}x")
 
-while True:
-    data = fetch_game_data()
-    multiplier = data["multiplier"]
-    timestamp = data["timestamp"]
+        except websockets.ConnectionClosedError:
+            await bot.send_message(chat_id=CHAT_ID, text="❌ Connection lost. Reconnecting...")
+            await asyncio.sleep(5)
+        except Exception as e:
+            await bot.send_message(chat_id=CHAT_ID, text=f"Error: {str(e)}")
+            await asyncio.sleep(10)
 
-    # Add to Google Sheet
-    sheet.append_row([timestamp, multiplier])
-
-    # Check streak
-    if multiplier < 2:
-        streak_2x += 1
-    else:
-        streak_2x = 0
-
-    # Alerts
-    if streak_2x == 5:
-        bot.send_message(chat_id=CHAT_ID, text=f"⚠️ 5x sub-2 streak at {timestamp}")
-    if streak_2x == 10:
-        bot.send_message(chat_id=CHAT_ID, text=f"🚨 10x sub-2 streak at {timestamp}")
-    if streak_2x == 20:
-        bot.send_message(chat_id=CHAT_ID, text=f"🔥 20x sub-2 streak at {timestamp}")
-
-    time.sleep(5)
+asyncio.run(connect())
