@@ -1,38 +1,34 @@
-import websocket
-import json
+import asyncio
+from playwright.async_api import async_playwright
 
-# ==== HAR file se nikala hua WebSocket URL & headers (ready to use) ====
-WS_URL = "wss://aviator-v2-vivo-casino.1wayez.life/socket.io/?EIO=3&transport=websocket"
+MOBILE = "8787081154"
+PASSWORD = "aniket10"
 
-HEADERS = {
-    "Origin": "https://1wayez.life",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
-    "Cookie": "_ga=GA1.2.123456789.987654321; session=eyJpdiI6IjRweG1Yd1h1eHhQOTVPRmR0RnF4MVE9PSIsInZhbHVlIjoiWmJPRHVsQ0dYcEx3aFZzME9iYmpkYVhJeUhGcmNmaW4vU2VYUk1kSk9TQ05TR0dQa0F5UzZTRit6NGQ5M3BoMyIsIm1hYyI6IjRkMjQzZjE4ODc3ZTNhZGUxN2I1NjBhNDY1NjQxZmYzZjcwYjdmZjc1YmI3YTAxYmUwYzE5NTYwZDQyZTVmMDkifQ%3D%3D",
-    "Sec-WebSocket-Extensions": "permessage-deflate; client_max_window_bits",
-    "Sec-WebSocket-Version": "13",
-    "Connection": "Upgrade",
-    "Upgrade": "websocket"
-}
+async def run():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context()
+        page = await context.new_page()
 
-def on_message(ws, message):
-    print(f"RAW DATA: {message}")
+        # 1. Login page open
+        await page.goto("https://1wayez.life/")
+        await page.fill("input[name='phone']", MOBILE)
+        await page.fill("input[name='password']", PASSWORD)
+        await page.click("button[type='submit']")
+        await page.wait_for_timeout(5000)  # wait after login
 
-def on_error(ws, error):
-    print(f"Error: {error}")
+        # 2. Astronaut game open
+        await page.goto("https://1wayez.life/casino/play/v_100hp:Astronaut?sub1=9UzvI6q0P3")
+        await page.wait_for_timeout(10000)  # wait to load game
 
-def on_close(ws, close_status_code, close_msg):
-    print("### WebSocket closed ###")
+        # 3. Fetch crash multiplier text (dummy selector - needs adjustment)
+        try:
+            element = await page.wait_for_selector("div.multiplier", timeout=10000)
+            value = await element.inner_text()
+            print(f"Current crash multiplier: {value}")
+        except:
+            print("Multiplier not found - may need different selector or verification blocked.")
 
-def on_open(ws):
-    print("Connected to WebSocket...")
+        await browser.close()
 
-if __name__ == "__main__":
-    ws = websocket.WebSocketApp(
-        WS_URL,
-        header=[f"{k}: {v}" for k, v in HEADERS.items()],
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close,
-        on_open=on_open
-    )
-    ws.run_forever()
+asyncio.run(run())
